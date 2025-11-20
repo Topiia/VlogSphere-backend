@@ -1,0 +1,325 @@
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const asyncHandler = require('../middleware/asyncHandler');
+const ErrorResponse = require('../utils/errorResponse');
+const sendEmail = require('../utils/sendEmail');
+
+// Generate JWT Token
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRE
+  });
+};
+
+// Generate Refresh Token
+const generateRefreshToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, {
+    expiresIn: process.env.JWT_REFRESH_EXPIRE
+  });
+};
+
+// @desc    Register user
+// @route   POST /api/auth/register
+// @access  Public
+exports.register = asyncHandler(async (req, res, next) => {
+  const { username, email, password } = req.body;
+
+  // Check if user exists
+  const existingUser = await User.findOne({ 
+    $or: [{ email }, { username }] 
+  });
+
+  if (existingUser) {
+    return next(new ErrorResponse('User already exists with this email or username', 400));
+  }
+
+  // Create user
+  const user = await User.create({
+    username,
+    email,
+    password
+  });
+
+  // Generate verification token
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  user.verificationToken = crypto
+    .createHash('sha256')
+    .update(verificationToken)
+    .digest('hex');
+  
+  await user.save();
+
+  // Generate tokens
+  const token = generateToken(user._id);
+  const refreshToken = generateRefreshToken(user._id);
+  user.refreshToken = refreshToken;
+  await user.save();
+
+  // Send verification email (optional)
+  if (process.env.EMAIL_HOST) {
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Verify Your Account',
+        template: 'email-verification',
+        data: { verificationToken, username: user.username }
+      });
+    } catch (error) {
+      console.error('Email sending failed:', error);
+    }
+  }
+
+  res.status(201).json({ success:true, message:'Registration successful, please verify your email.' });
+});
+
+// @desc    Login user
+// @route   POST /api/auth/login
+// @access  Public
+exports.login = asyncHandler(async (req, res, next) => {
+  const { email, password } = req.body;
+
+  // Validate email & password
+  if (!email || !password) {
+    return next(new ErrorResponse('Please provide an email and password', 400));
+  }
+
+  // Check for user
+  const user = await User.findOne({ email }).select('+password');
+
+  if (!user) {
+    return next(new ErrorResponse('Invalid credentials', 401));
+  }
+
+  // Check if password matches
+  const isMatch = await user.comparePassword(password);
+
+  if (!isMatch) {
+    return next(new ErrorResponse('Invalid credentials', 401));
+  }
+
+  // Update last login
+  user.lastLogin = Date.now();
+
+  // Generate tokens
+  const token = generateToken(user._id);
+  const refreshToken = generateRefreshToken(user._id);
+  user.refreshToken = refreshToken;
+  await user.save();
+
+  // Set cookies (optional)
+  if (req.body.rememberMe) {
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    token,
+    refreshToken,
+    user: {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      avatar: user.avatar,
+      bio: user.bio,
+      preferences: user.preferences,
+      isVerified: user.isVerified,
+      followerCount: user.followerCount,
+      followingCount: user.followingCount
+    }
+  });
+});
+
+// @desc    Get current logged in user
+// @route   GET /api/auth/me
+// @access  Private
+exports.getMe = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.user.id)
+    .populate('followers', 'username avatar')
+    .populate('following', 'username avatar');
+
+  res.status(200).json({
+    success: true,
+    user: {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      avatar: user.avatar,
+      bio: user.bio,
+      preferences: user.preferences,
+      isVerified: user.isVerified,
+      followerCount: user.followerCount,
+      followingCount: user.followingCount,
+      followers: user.followers,
+      following: user.following,
+      createdAt: user.createdAt
+    }
+  });
+});
+
+// @desc    Update user details
+// @route   PUT /api/auth/updatedetails
+// @access  Private
+exports.updateDetails = asyncHandler(async (req, res, next) => {
+  const { username, email, bio, avatar, preferences } = req.body;
+  
+  const fieldsToUpdate = {};
+  
+  if (username) fieldsToUpdate.username = username;
+  if (email) fieldsToUpdate.email = email;
+  if (bio !== undefined) fieldsToUpdate.bio = bio;
+  if (avatar) fieldsToUpdate.avatar = avatar;
+  if (preferences) fieldsToUpdate.preferences = preferences;
+
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    fieldsToUpdate,
+    {
+      new: true,
+      runValidators: true
+    }
+  );
+
+  res.status(200).json({
+    success: true,
+    user: {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      avatar: user.avatar,
+      bio: user.bio,
+      preferences: user.preferences,
+      isVerified: user.isVerified,
+      followerCount: user.followerCount,
+      followingCount: user.followingCount
+    }
+  });
+});
+
+// @desc    Update password
+// @route   PUT /api/auth/updatepassword
+// @access  Private
+exports.updatePassword = asyncHandler(async (req, res, next) => {
+  const { currentPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user.id).select('+password');
+
+  // Check current password
+  if (!(await user.comparePassword(currentPassword))) {
+    return next(new ErrorResponse('Current password is incorrect', 401));
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: 'Password updated successfully'
+  });
+});
+
+// @desc    Forgot password
+// @route   POST /api/auth/forgotpassword
+// @access  Public
+exports.forgotPassword = asyncHandler(async (req, res, next) => {
+  const user = await User.findOne({ email: req.body.email });
+
+  if (!user) {
+    return next(new ErrorResponse('There is no user with that email', 404));
+  }
+
+  // Get reset token
+  const resetToken = user.generatePasswordResetToken();
+  await user.save({ validateBeforeSave: false });
+
+  // Create reset URL
+  const resetUrl = `${req.protocol}://${req.get('host')}/api/auth/resetpassword/${resetToken}`;
+
+  const message = `You are receiving this email because you (or someone else) has requested the reset of a password. Please make a PUT request to: \n\n ${resetUrl}`;
+
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: 'Password Reset Token',
+      text: message
+    });
+
+    res.status(200).json({ success: true, message: 'Email sent' });
+  } catch (err) {
+    console.log(err);
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save({ validateBeforeSave: false });
+
+    return next(new ErrorResponse('Email could not be sent', 500));
+  }
+});
+
+// @desc    Reset password
+// @route   PUT /api/auth/resetpassword/:resettoken
+// @access  Public
+exports.resetPassword = asyncHandler(async (req, res, next) => {
+  // Get hashed token
+  const resetPasswordToken = crypto
+    .createHash('sha256')
+    .update(req.params.resettoken)
+    .digest('hex');
+
+  const user = await User.findOne({
+    passwordResetToken: resetPasswordToken,
+    passwordResetExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return next(new ErrorResponse('Invalid token', 400));
+  }
+
+  // Set new password
+  user.password = req.body.password;
+  user.passwordResetToken = undefined;
+  user.passwordResetExpires = undefined;
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: 'Password reset successful'
+  });
+});
+
+// @desc    Verify email
+// @route   GET /api/auth/verify/:token
+// @access  Public
+exports.verifyEmail = asyncHandler(async (req, res, next) => {
+  const verificationToken = crypto
+    .createHash('sha256')
+    .update(req.params.token)
+    .digest('hex');
+
+  const user = await User.findOne({
+    verificationToken,
+    isVerified: false
+  });
+
+  if (!user) {
+    return next(new ErrorResponse('Invalid verification token', 400));
+  }
+
+  user.isVerified = true;
+  user.isActive = true;
+  user.verificationToken = undefined;
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: 'Email verified successfully'
+  });
+});
