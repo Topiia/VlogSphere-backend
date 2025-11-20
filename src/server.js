@@ -43,7 +43,8 @@ const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
       "http://localhost:3000",
-      "https://vlog-sphere-frontend.vercel.app"
+      "https://vlog-sphere-frontend.vercel.app",
+      "https://vlog-sphere-frontend-qhbj6blqd-haabhai83-4616s-projects.vercel.app"
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
@@ -53,8 +54,9 @@ const corsOptions = {
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200,
+  optionsSuccessStatus: 200
 };
+
 
 
 app.use(cors(corsOptions));
