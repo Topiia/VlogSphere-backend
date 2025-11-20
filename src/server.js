@@ -41,22 +41,21 @@ app.use(helmet({
 // CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = process.env.CORS_ORIGINS 
-      ? process.env.CORS_ORIGINS.split(',') 
-      : ['http://localhost:3000'];
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    const allowedOrigins = [
+      "http://localhost:3000",
+      "https://vlog-sphere-frontend.vercel.app"
+    ];
+
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
 };
+
 
 app.use(cors(corsOptions));
 
