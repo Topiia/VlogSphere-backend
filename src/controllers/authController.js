@@ -246,22 +246,35 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 
   const message = `You are receiving this email because you (or someone else) has requested the reset of a password. Please make a PUT request to: \n\n ${resetUrl}`;
 
-  try {
+try {
+    await user.save({ validateBeforeSave: false });
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+    const message = `
+      <p>You requested a password reset.</p>
+      <p>Click the link below to reset your password:</p>
+      <a href="${resetUrl}" target="_blank">${resetUrl}</a>
+      <p>If you did not request this, please ignore this email.</p>
+    `;
+
     await sendEmail({
-      to: user.email,
-      subject: 'Password Reset Token',
-      text: message
+      email: user.email,
+      subject: 'Password Reset Request',
+      message
     });
 
     res.status(200).json({ success: true, message: 'Email sent' });
-  } catch (err) {
-    console.log(err);
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
+} catch (error) {
+    console.error("FORGOT PASSWORD ERROR:", error);  // <-- ADD THIS
+
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
     await user.save({ validateBeforeSave: false });
 
     return next(new ErrorResponse('Email could not be sent', 500));
-  }
+}
+
 });
 
 // @desc    Reset password
