@@ -275,25 +275,29 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/auth/resetpassword/:resettoken
 // @access  Public
 exports.resetPassword = asyncHandler(async (req, res, next) => {
-  // Get hashed token
+  // Hash token from URL
   const resetPasswordToken = crypto
     .createHash('sha256')
     .update(req.params.resettoken)
     .digest('hex');
 
+  // Find user with valid token + not expired
   const user = await User.findOne({
     passwordResetToken: resetPasswordToken,
     passwordResetExpires: { $gt: Date.now() }
   });
 
   if (!user) {
-    return next(new ErrorResponse('Invalid token', 400));
+    return next(new ErrorResponse('Invalid or expired token', 400));
   }
 
   // Set new password
   user.password = req.body.password;
+
+  // Clear the reset token fields
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
+
   await user.save();
 
   res.status(200).json({
@@ -301,6 +305,7 @@ exports.resetPassword = asyncHandler(async (req, res, next) => {
     message: 'Password reset successful'
   });
 });
+
 
 // @desc    Verify email
 // @route   GET /api/auth/verify/:token
