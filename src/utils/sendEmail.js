@@ -1,25 +1,22 @@
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
 
-const sendEmail = async (options) => {
+const sendEmail = async ({ email, subject, message }) => {
   const transporter = nodemailer.createTransport({
-    service: process.env.EMAIL_SERVICE,
-    host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT,
-    secure: false,
+    host: process.env.EMAIL_HOST, // smtp.gmail.com
+    port: process.env.EMAIL_PORT, // 465
+    secure: true, // true for 465
     auth: {
-      user: process.env.EMAIL_USERNAME,
-      pass: process.env.EMAIL_PASSWORD
-    }
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
   });
 
-  const mailOptions = {
-    from: process.env.EMAIL_FROM,
-    to: options.email,
-    subject: options.subject,
-    html: options.message,
-  };
-
-  return await transporter.sendMail(mailOptions);
+  await transporter.sendMail({
+    from: `"VlogSphere" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: subject,
+    html: message,
+  });
 };
 
 module.exports = sendEmail;
