@@ -237,44 +237,38 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('There is no user with that email', 404));
   }
 
-  // Get reset token
+  // Generate reset token
   const resetToken = user.generatePasswordResetToken();
   await user.save({ validateBeforeSave: false });
 
-  // Create reset URL
-  const resetUrl = `${req.protocol}://${req.get('host')}/api/auth/resetpassword/${resetToken}`;
+  // Correct URL to frontend reset page
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-  const message = `You are receiving this email because you (or someone else) has requested the reset of a password. Please make a PUT request to: \n\n ${resetUrl}`;
+  // Correct HTML message
+  const message = `
+    <p>You requested a password reset.</p>
+    <p>Click the link below to reset your password:</p>
+    <a href="${resetUrl}" target="_blank">${resetUrl}</a>
+    <p>If you did not request this, please ignore this email.</p>
+  `;
 
-try {
-    await user.save({ validateBeforeSave: false });
-
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-
-    const message = `
-      <p>You requested a password reset.</p>
-      <p>Click the link below to reset your password:</p>
-      <a href="${resetUrl}" target="_blank">${resetUrl}</a>
-      <p>If you did not request this, please ignore this email.</p>
-    `;
-
+  try {
     await sendEmail({
       email: user.email,
       subject: 'Password Reset Request',
-      message
+      message: message
     });
 
     res.status(200).json({ success: true, message: 'Email sent' });
-} catch (error) {
-    console.error("FORGOT PASSWORD ERROR:", error);  // <-- ADD THIS
+  } catch (error) {
+    console.error("FORGOT PASSWORD ERROR:", error);
 
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpire = undefined;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
     await user.save({ validateBeforeSave: false });
 
     return next(new ErrorResponse('Email could not be sent', 500));
-}
-
+  }
 });
 
 // @desc    Reset password
