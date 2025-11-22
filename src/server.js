@@ -34,19 +34,19 @@ app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Will be handled by frontend
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
 
-// CORS configuration
+// ⭐ CORRECTED CORS CONFIG
+const allowedOrigins = [
+  "https://vlog-sphere-frontend.vercel.app",
+  "https://vlog-sphere-frontend.qhbj6blqb-haabhai83-4616s-projects.vercel.app",
+  "http://localhost:5173"  // Vite development
+];
+
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      "http://localhost:3000",
-      "https://vlog-sphere-frontend.vercel.app",
-      "https://vlog-sphere-frontend-qhbj6blqd-haabhai83-4616s-projects.vercel.app"
-    ];
-
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -57,14 +57,13 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
-
-
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Preflight support
 
 // Rate limiting (disabled in test mode)
 if (process.env.NODE_ENV !== 'test') {
   const limiter = rateLimit({
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
     message: {
       success: false,
@@ -77,16 +76,17 @@ if (process.env.NODE_ENV !== 'test') {
   app.use('/api/', limiter);
 }
 
-// Stricter rate limiting for auth endpoints (disabled in test mode)
+// Stricter rate limiting for auth endpoints
 const authLimiter = process.env.NODE_ENV !== 'test' ? rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requests per window
+  windowMs: 15 * 60 * 1000,
+  max: 5,
   message: {
     success: false,
     error: 'Too many authentication attempts, please try again later.'
   },
   skipSuccessfulRequests: true
 }) : (req, res, next) => next();
+
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
@@ -150,35 +150,7 @@ app.get('/api/docs', (req, res) => {
         'GET /api/auth/verify/:token': 'Verify email',
         'POST /api/auth/refresh': 'Refresh access token',
         'POST /api/auth/logout': 'Logout user'
-      },
-      vlogs: {
-        'GET /api/vlogs': 'Get all vlogs (paginated, filtered)',
-        'GET /api/vlogs/trending': 'Get trending vlogs',
-        'GET /api/vlogs/user/:userId': 'Get user vlogs',
-        'GET /api/vlogs/:id': 'Get single vlog',
-        'POST /api/vlogs': 'Create new vlog',
-        'PUT /api/vlogs/:id': 'Update vlog',
-        'DELETE /api/vlogs/:id': 'Delete vlog',
-        'PUT /api/vlogs/:id/like': 'Toggle like on vlog',
-        'PUT /api/vlogs/:id/dislike': 'Toggle dislike on vlog',
-        'POST /api/vlogs/:id/comments': 'Add comment to vlog',
-        'DELETE /api/vlogs/:id/comments/:commentId': 'Delete comment from vlog'
-      },
-      upload: {
-        'POST /api/upload/single': 'Upload single image',
-        'POST /api/upload/multiple': 'Upload multiple images',
-        'DELETE /api/upload/:publicId': 'Delete image'
       }
-    },
-    features: {
-      authentication: 'JWT-based authentication with refresh tokens',
-      authorization: 'Role-based access control',
-      fileUpload: 'Image upload with Cloudinary integration',
-      aiFeatures: 'Auto-tagging and content analysis',
-      security: 'Rate limiting, CORS, Helmet security headers',
-      validation: 'Input validation and sanitization',
-      pagination: 'Paginated responses with metadata',
-      filtering: 'Advanced filtering and search capabilities'
     }
   });
 });
@@ -191,7 +163,7 @@ app.use('*', (req, res) => {
   });
 });
 
-// Error handler middleware (must be last)
+// Error handler middleware
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
@@ -200,13 +172,10 @@ const server = app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
 });
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err, promise) => {
+// Handle promise rejections
+process.on('unhandledRejection', (err) => {
   console.log(`Error: ${err.message}`);
-  // Close server & exit process
-  server.close(() => {
-    process.exit(1);
-  });
+  server.close(() => process.exit(1));
 });
 
 // Handle uncaught exceptions
