@@ -26,37 +26,40 @@ exports.register = asyncHandler(async (req, res, next) => {
   const { username, email, password } = req.body;
 
   // Check if user exists
-  const existingUser = await User.findOne({ 
-    $or: [{ email }, { username }] 
+  const existingUser = await User.findOne({
+    $or: [{ email }, { username }]
   });
 
   if (existingUser) {
-    return next(new ErrorResponse('User already exists with this email or username', 400));
+    return next(
+      new ErrorResponse(
+        'User already exists with this email or username',
+        400
+      )
+    );
   }
 
   // Create user
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+
   const user = await User.create({
     username,
     email,
-    password
+    password,
+    verificationToken: crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex')
   });
-
-  // Generate verification token
-  const verificationToken = crypto.randomBytes(32).toString('hex');
-  user.verificationToken = crypto
-    .createHash('sha256')
-    .update(verificationToken)
-    .digest('hex');
-  
-  await user.save();
 
   // Generate tokens
   const token = generateToken(user._id);
   const refreshToken = generateRefreshToken(user._id);
+
   user.refreshToken = refreshToken;
   await user.save();
 
-  // Send verification email (optional)
+  // Send verification email
   if (process.env.EMAIL_HOST) {
     try {
       await sendEmail({
@@ -65,13 +68,29 @@ exports.register = asyncHandler(async (req, res, next) => {
         template: 'email-verification',
         data: { verificationToken, username: user.username }
       });
-    } catch (error) {
-      console.error('Email sending failed:', error);
+    } catch (emailErr) {
+      console.error('Email sending failed:', emailErr);
     }
   }
 
-  res.status(201).json({ success:true, message:'Registration successful, please verify your email.' });
+  // Success: send user + tokens for frontend
+  res.status(201).json({
+    success: true,
+    message: 'Registration successful.',
+    data: {
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        avatar: user.avatar,
+        isVerified: user.isVerified
+      },
+      token,
+      refreshToken
+    }
+  });
 });
+
 
 // @desc    Login user
 // @route   POST /api/auth/login
