@@ -19,37 +19,34 @@ const generateRefreshToken = (id) => {
   });
 };
 
-// @desc    Register user
-// @route   POST /api/auth/register
-// @access  Public
 exports.register = asyncHandler(async (req, res, next) => {
   const { username, email, password } = req.body;
 
-  // Check if user exists
+  // Check existing
   const existingUser = await User.findOne({
     $or: [{ email }, { username }]
   });
 
   if (existingUser) {
-    return next(
-      new ErrorResponse(
-        'User already exists with this email or username',
-        400
-      )
-    );
+    return next(new ErrorResponse(
+      "User already exists with this email or username",
+      400
+    ));
   }
 
-  // Create user
-  const verificationToken = crypto.randomBytes(32).toString('hex');
+  // Create verification token
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(verificationToken)
+    .digest("hex");
 
+  // Create user
   const user = await User.create({
     username,
     email,
     password,
-    verificationToken: crypto
-      .createHash('sha256')
-      .update(verificationToken)
-      .digest('hex')
+    verificationToken: hashedToken
   });
 
   // Generate tokens
@@ -59,24 +56,24 @@ exports.register = asyncHandler(async (req, res, next) => {
   user.refreshToken = refreshToken;
   await user.save();
 
-  // Send verification email
+  // Send email
   if (process.env.EMAIL_HOST) {
     try {
       await sendEmail({
         to: user.email,
-        subject: 'Verify Your Account',
-        template: 'email-verification',
+        subject: "Verify Your Account",
+        template: "email-verification",
         data: { verificationToken, username: user.username }
       });
-    } catch (emailErr) {
-      console.error('Email sending failed:', emailErr);
+    } catch (err) {
+      console.error("Email send failed:", err);
     }
   }
 
-  // Success: send user + tokens for frontend
+  // Final response (IMPORTANT)
   res.status(201).json({
     success: true,
-    message: 'Registration successful.',
+    message: "Registration successful.",
     data: {
       user: {
         id: user._id,
@@ -90,6 +87,7 @@ exports.register = asyncHandler(async (req, res, next) => {
     }
   });
 });
+
 
 
 // @desc    Login user
